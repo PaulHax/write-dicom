@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Write DICOM Series - ITK-Wasm</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 800px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    .section-title {
+      font-size: 1.2em;
+      color: #444;
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+    }
+
+    .file-input-label {
+      display: block;
+      padding: 15px 20px;
+      background: #667eea;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.3s;
+      font-weight: 500;
+    }
+
+    .file-input-label:hover {
+      background: #5568d3;
+    }
+
+    .file-name {
+      margin-top: 10px;
+      color: #666;
+      font-size: 0.9em;
+    }
+
+    .options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    label {
+      font-size: 0.9em;
+      color: #555;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 1em;
+      transition: border-color 0.3s;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button {
+      padding: 15px 30px;
+      background: #764ba2;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1em;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 600;
+      width: 100%;
+    }
+
+    .button:hover:not(:disabled) {
+      background: #653a8f;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(118, 75, 162, 0.4);
+    }
+
+    .button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .progress-container {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .progress-bar {
+      height: 30px;
+      background: #e0e0e0;
+      border-radius: 15px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+    }
+
+    .status {
+      color: #666;
+      text-align: center;
+      font-size: 0.9em;
+    }
+
+    .error {
+      background: #fee;
+      color: #c00;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    .success {
+      background: #efe;
+      color: #060;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    @media (max-width: 600px) {
+      .options {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Write DICOM Series</h1>
+    <p class="subtitle">Convert 3D medical images to DICOM slice series</p>
+
+    <div class="section">
+      <div class="section-title">1. Select Image File</div>
+      <div class="file-input-wrapper">
+        <input type="file" id="fileInput" accept=".nrrd,.nii,.nii.gz,.mha,.mhd,.vtk">
+        <label for="fileInput" class="file-input-label">
+          Choose 3D Medical Image
+        </label>
+      </div>
+      <div class="file-name" id="fileName">No file selected</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">2. Configure DICOM Metadata</div>
+      <div class="options">
+        <div class="form-group">
+          <label for="seriesDescription">Series Description</label>
+          <input type="text" id="seriesDescription" value="Converted Medical Image Series">
+        </div>
+        <div class="form-group">
+          <label for="seriesNumber">Series Number</label>
+          <input type="number" id="seriesNumber" value="100" min="1">
+        </div>
+        <div class="form-group">
+          <label for="modality">Modality</label>
+          <select id="modality">
+            <option value="MR">MR (Magnetic Resonance)</option>
+            <option value="CT">CT (Computed Tomography)</option>
+            <option value="PT">PT (Positron Emission Tomography)</option>
+            <option value="US">US (Ultrasound)</option>
+            <option value="XA">XA (X-Ray Angiography)</option>
+            <option value="OT">OT (Other)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="instanceStart">Instance Number Start</label>
+          <input type="number" id="instanceStart" value="1" min="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">3. Generate DICOM Series</div>
+      <button class="button" id="convertButton" disabled>
+        Convert to DICOM Series
+      </button>
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill">0%</div>
+      </div>
+      <div class="status" id="statusText">Processing...</div>
+    </div>
+
+    <div class="error" id="errorMsg"></div>
+    <div class="success" id="successMsg"></div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
