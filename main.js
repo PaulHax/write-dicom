@@ -1,5 +1,6 @@
 import { readImage } from '@itk-wasm/image-io'
-import { writeImageAsDicomSeries, downloadFilesAsZip } from './src/write-image-series.js'
+import { writeImageAsDicomSeriesWithDcmjs } from './src/write-dicom-dcmjs.js'
+import { downloadFilesAsZip } from './src/write-image-series.js'
 
 let selectedFile = null
 let loadedImage = null
@@ -78,7 +79,7 @@ convertButton.addEventListener('click', async () => {
 
     updateProgress(0, 'Converting to DICOM series...')
 
-    const files = await writeImageAsDicomSeries(loadedImage, options)
+    const files = await writeImageAsDicomSeriesWithDcmjs(loadedImage, options)
 
     updateProgress(90, 'Creating ZIP archive...')
 

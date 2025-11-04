@@ -1,10 +1,8 @@
-import { readImageNode } from '@itk-wasm/image-io'
 import { readImageDicomFileSeriesNode } from '@itk-wasm/dicom'
-import { writeImageAsDicomSeries } from '../src/write-image-series.js'
+import { writeImageAsDicomSeriesWithDcmjs } from '../src/write-dicom-dcmjs.js'
 import https from 'https'
 import fs from 'fs'
 import path from 'path'
-import { pipeline } from 'stream/promises'
 import { fileURLToPath } from 'url'
 import JSZip from 'jszip'
 
@@ -12,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const MRA_URL = 'https://data.kitware.com/api/v1/item/6352a2b311dab8142820a33b/download'
-const TEST_DIR = path.join(__dirname, 'test-data')
+const TEST_DIR = path.join(__dirname, 'test-data-dcmjs')
 const MRA_ZIP = path.join(TEST_DIR, 'MRA-Head_and_Neck.zip')
 const OUTPUT_DIR = path.join(TEST_DIR, 'output-dicom')
 
@@ -22,7 +20,6 @@ async function downloadFile(url, outputPath) {
   return new Promise((resolve, reject) => {
     https.get(url, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
-        // Follow redirect
         https.get(response.headers.location, (redirectResponse) => {
           const fileStream = fs.createWriteStream(outputPath)
           redirectResponse.pipe(fileStream)
@@ -63,8 +60,8 @@ async function extractZip(zipPath, extractDir) {
 
     const content = await file.async('nodebuffer')
     fs.writeFileSync(outputPath, content)
-    console.log(`Extracted: ${filename}`)
   }
+  console.log('Extraction complete')
 }
 
 async function findDicomFiles(dir) {
@@ -79,8 +76,6 @@ async function findDicomFiles(dir) {
       if (entry.isDirectory()) {
         scanDir(fullPath)
       } else if (entry.isFile()) {
-        // DICOM files often don't have extensions or are numeric
-        // Check if it's a file without extension or with numeric name
         if (!entry.name.includes('.') || !isNaN(entry.name)) {
           files.push(fullPath)
         }
@@ -94,15 +89,13 @@ async function findDicomFiles(dir) {
     throw new Error('No DICOM files found in extracted archive')
   }
 
-  // Sort files by name
   files.sort()
-
   return files
 }
 
 async function runTest() {
   console.log('='.repeat(60))
-  console.log('DICOM Series Writer Test')
+  console.log('DICOM Series Writer Test - Using dcmjs')
   console.log('='.repeat(60))
 
   try {
@@ -153,76 +146,43 @@ async function runTest() {
       throw new Error(`Expected 3D image, got ${image.imageType.dimension}D`)
     }
 
-    // Test slice extraction and metadata generation
-    console.log('\n5. Testing slice extraction and DICOM metadata generation...')
+    // Test dcmjs DICOM writing
+    console.log('\n5. Writing DICOM series with dcmjs...')
+    console.log('Testing with first 10 slices...')
 
-    const { extractSlice } = await import('../src/write-image-series.js')
-    const { writeImageAsDicomSeriesWithDcmjs } = await import('../src/write-dicom-dcmjs.js')
-
-    // Extract a few test slices to verify the function works
-    const testSlices = [0, Math.floor(image.size[2] / 2), image.size[2] - 1]
-
-    for (const sliceIdx of testSlices) {
-      const slice = extractSlice(image, sliceIdx)
-      console.log(`Slice ${sliceIdx}: ${slice.size[0]}×${slice.size[1]}, ` +
-                  `origin: [${slice.origin.map(o => o.toFixed(2)).join(', ')}], ` +
-                  `z: ${slice.zPosition.toFixed(2)}`)
-    }
-
-    console.log('\n6. Verifying slice extraction...')
-    console.log(`✓ Successfully extracted ${testSlices.length} test slices`)
-    console.log(`✓ Each slice is 2D: ${extractSlice(image, 0).imageType.dimension === 2}`)
-    console.log(`✓ Slice spacing preserved: ${extractSlice(image, 0).spacing.join('×')} mm`)
-
-    // Test actual DICOM writing with writeImageAsDicomSeries
-    console.log('\n7. Attempting to write DICOM series with GDCM...')
-    console.log('Testing with just first 3 slices to diagnose issues...')
-
-    // Create a small test volume (first 3 slices only)
+    // Create a small test volume (first 10 slices)
     const smallImage = {
       ...image,
-      size: [image.size[0], image.size[1], 3],
-      data: image.data.slice(0, image.size[0] * image.size[1] * 3)
+      size: [image.size[0], image.size[1], 10],
+      data: image.data.slice(0, image.size[0] * image.size[1] * 10)
     }
 
-    try {
-      const files = await writeImageAsDicomSeries(smallImage, {
-        fileNamePattern: 'test_slice_%04d.dcm',
-        seriesDescription: 'GDCM Test',
-        seriesNumber: 999,
-        modality: 'MR',
-        instanceNumberStart: 1,
-        useCompression: false
-      })
+    const files = await writeImageAsDicomSeriesWithDcmjs(smallImage, {
+      fileNamePattern: 'dcmjs_slice_%04d.dcm',
+      seriesDescription: 'dcmjs Test Series',
+      seriesNumber: 888,
+      modality: 'MR',
+      instanceNumberStart: 1
+    })
 
-      console.log(`✓ Successfully generated ${files.length} DICOM files in memory`)
+    console.log(`\n6. Successfully generated ${files.length} DICOM files with dcmjs!`)
 
-      // Try to write them
-      console.log('Writing DICOM files to disk...')
-      for (const file of files) {
-        const outputPath = path.join(OUTPUT_DIR, file.filename)
-        fs.writeFileSync(outputPath, Buffer.from(file.data))
-      }
-      console.log(`✓ Wrote ${files.length} DICOM files to ${OUTPUT_DIR}`)
-
-    } catch (error) {
-      console.error('✗ DICOM writing failed:', error.message)
-      console.error('Error details:', error)
-      console.log('\nThis confirms GDCM writer has issues in Node.js context.')
-      console.log('Falling back to copying original DICOM files for round-trip test...')
-
-      // Copy original files instead
-      let fileIdx = 0
-      for (const dicomFile of dicomFiles.slice(0, 10)) {
-        const filename = `mra_slice_${String(fileIdx).padStart(4, '0')}.dcm`
-        const outputPath = path.join(OUTPUT_DIR, filename)
-        fs.copyFileSync(dicomFile, outputPath)
-        fileIdx++
-      }
-      console.log(`Copied ${fileIdx} DICOM files for testing`)
+    // Calculate total size
+    let totalSize = 0
+    for (const file of files) {
+      totalSize += file.data.byteLength
     }
+    console.log(`Total DICOM data size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
 
-    // Read back the DICOM series to verify round-trip
+    // Write to disk
+    console.log('\n7. Writing DICOM files to disk...')
+    for (const file of files) {
+      const outputPath = path.join(OUTPUT_DIR, file.filename)
+      fs.writeFileSync(outputPath, Buffer.from(file.data))
+    }
+    console.log(`Wrote ${files.length} files to ${OUTPUT_DIR}`)
+
+    // Read back the DICOM series to verify
     console.log('\n8. Reading back DICOM series with ITK-Wasm...')
     const outputFiles = fs.readdirSync(OUTPUT_DIR)
     const writtenDicomFiles = outputFiles
@@ -243,42 +203,27 @@ async function runTest() {
 
     // Compare dimensions
     console.log('\n9. Comparing original and reloaded images...')
-    const dimMatch = image.size[0] === reloadedImage.size[0] &&
-                     image.size[1] === reloadedImage.size[1] &&
-                     image.size[2] === reloadedImage.size[2]
+    const dimMatch = smallImage.size[0] === reloadedImage.size[0] &&
+                     smallImage.size[1] === reloadedImage.size[1] &&
+                     smallImage.size[2] === reloadedImage.size[2]
 
     if (!dimMatch) {
       throw new Error(
-        `Dimension mismatch! Original: ${image.size.join('×')}, Reloaded: ${reloadedImage.size.join('×')}`
+        `Dimension mismatch! Original: ${smallImage.size.join('×')}, Reloaded: ${reloadedImage.size.join('×')}`
       )
     }
 
-    // Compare spacing (with tolerance for floating point)
+    // Compare spacing
     const spacingTolerance = 0.001
-    const spacingMatch = image.spacing.every((s, i) =>
+    const spacingMatch = smallImage.spacing.every((s, i) =>
       Math.abs(s - reloadedImage.spacing[i]) < spacingTolerance
     )
 
     if (!spacingMatch) {
       throw new Error(
-        `Spacing mismatch! Original: ${image.spacing.map(s => s.toFixed(3)).join('×')}, ` +
+        `Spacing mismatch! Original: ${smallImage.spacing.map(s => s.toFixed(3)).join('×')}, ` +
         `Reloaded: ${reloadedImage.spacing.map(s => s.toFixed(3)).join('×')}`
       )
-    }
-
-    // Compare origin (with tolerance)
-    const originTolerance = 0.1
-    const originMatch = image.origin.every((o, i) =>
-      Math.abs(o - reloadedImage.origin[i]) < originTolerance
-    )
-
-    if (!originMatch) {
-      console.warn(
-        `⚠ Origin mismatch (within tolerance): Original: [${image.origin.map(o => o.toFixed(3)).join(', ')}], ` +
-        `Reloaded: [${reloadedImage.origin.map(o => o.toFixed(3)).join(', ')}]`
-      )
-    } else {
-      console.log('✓ Origin matches')
     }
 
     console.log('✓ Dimensions match')
@@ -286,10 +231,10 @@ async function runTest() {
     console.log(`✓ Successfully read back ${sortedFilenames.length} DICOM files`)
 
     console.log('\n' + '='.repeat(60))
-    console.log('✓ TEST PASSED')
+    console.log('✓ TEST PASSED - dcmjs works!')
     console.log('='.repeat(60))
     console.log(`\nOutput DICOM files are in: ${OUTPUT_DIR}`)
-    console.log('The DICOM series was successfully read back and verified!')
+    console.log('The DICOM series was successfully written and verified with dcmjs!')
 
   } catch (error) {
     console.error('\n' + '='.repeat(60))

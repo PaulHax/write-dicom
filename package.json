@@ -7,11 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/download-and-test.js"
+    "test": "node test/download-and-test.js",
+    "test:dcmjs": "node test/test-dcmjs.js"
   },
   "dependencies": {
-    "@itk-wasm/image-io": "^1.6.0",
     "@itk-wasm/dicom": "^7.6.2",
+    "@itk-wasm/image-io": "^1.6.0",
+    "dcmjs": "^0.45.0",
     "itk-wasm": "^1.0.0-b.179",
     "jszip": "^3.10.1"
   },
