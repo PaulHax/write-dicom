@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename)
 const MRA_URL = 'https://data.kitware.com/api/v1/item/6352a2b311dab8142820a33b/download'
 const TEST_DIR = path.join(__dirname, 'test-data')
 const MRA_ZIP = path.join(TEST_DIR, 'MRA-Head_and_Neck.zip')
-const OUTPUT_DIR = path.join(TEST_DIR, 'output-dicom')
+const OUTPUT_DIR = path.join(TEST_DIR, 'output-gdcm')
 
 async function downloadFile(url, outputPath) {
   console.log(`Downloading from ${url}...`)

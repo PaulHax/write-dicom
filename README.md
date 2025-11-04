@@ -1,6 +1,30 @@
 # Write DICOM Series
 
-A web application for converting 3D medical images to DICOM slice series using ITK-Wasm.
+A Javascript function for converting 3D medical images to DICOM slice series using dcmjs and ITK-Wasm. (ITK-Wasm mode does not work yet.)
+
+## Core Function
+
+The [`writeImageAsDicomSeriesWithDcmjs`](./src/write-dicom-dcmjs.js) function converts an ITK-Wasm 3D Image to a DICOM series:
+
+```javascript
+import { readImage } from "@itk-wasm/image-io";
+import { writeImageAsDicomSeriesWithDcmjs } from "./src/write-dicom-dcmjs.js";
+
+// Read a 3D medical image
+const { image } = await readImage(file);
+
+// Convert to DICOM series
+const files = await writeImageAsDicomSeriesWithDcmjs(image, {
+  fileNamePattern: "slice_%04d.dcm",
+  seriesDescription: "My MRI Series",
+  seriesNumber: 1,
+  modality: "MR",
+  instanceNumberStart: 1,
+});
+
+// files is an array of { filename, blob, data }
+// Each file contains a DICOM slice that can be written to disk or downloaded
+```
 
 ## Features
 
@@ -32,38 +56,37 @@ Then open your browser to `http://localhost:5173`
 3. Click "Convert to DICOM Series"
 4. Download the generated DICOM series as a ZIP file
 
-### Automated Test
+### Automated Tests
 
-Run the automated test that downloads the MRA Head and Neck dataset:
+Run the dcmjs test:
 
 ```bash
-npm test
+npm run test:dcmjs
 ```
 
 This will:
-1. Download the MRA Head and Neck dataset from Kitware (https://data.kitware.com)
+
+1. Download the MRA Head and Neck dataset
 2. Extract the DICOM series
 3. Read the DICOM series as a 3D volume
-4. Test slice extraction and metadata generation
-5. Verify round-trip reading of DICOM series
+4. Write first 10 slices to DICOM using dcmjs
+5. Read back the written DICOM files with ITK-Wasm
+6. Verify dimensions, spacing, and metadata match
 
-**Note**: The test currently demonstrates slice extraction and DICOM metadata generation. The browser version fully supports writing DICOM files with the web interface.
+The dcmjs implementation successfully writes valid DICOM Part 10 files that can be read back by ITK-Wasm and other DICOM viewers.
 
 ## Supported Input Formats
+
+Any 3D medical image format that ITK-Wasm can read, including:
 
 - NRRD (.nrrd)
 - NIfTI (.nii, .nii.gz)
 - MetaImage (.mha, .mhd)
 - VTK (.vtk)
+- DICOM series (read and re-export)
+- And many more formats supported by ITK-Wasm
 
-## Supported Modalities
-
-- MR (Magnetic Resonance)
-- CT (Computed Tomography)
-- PT (Positron Emission Tomography)
-- US (Ultrasound)
-- XA (X-Ray Angiography)
-- OT (Other)
+The `writeImageAsDicomSeriesWithDcmjs` function works with any ITK-Wasm Image object in memory, regardless of the original file format.
 
 ## DICOM Metadata
 
@@ -82,13 +105,17 @@ These tags ensure proper reconstruction in DICOM viewers like VolView, 3D Slicer
 
 ## Implementation Details
 
-The converter:
+The converter uses **dcmjs** (pure JavaScript) to write DICOM files:
 
-1. Extracts 2D slices from the 3D volume
-2. Preserves spatial information (origin, spacing, direction)
-3. Generates unique DICOM UIDs for series and instances
-4. Calculates Image Position (Patient) for each slice
-5. Writes each slice as a separate DICOM file
+1. **ITK-Wasm** reads the input 3D medical image
+2. Extracts 2D slices from the 3D volume with proper spatial coordinates
+3. Preserves spatial information (origin, spacing, direction)
+4. **dcmjs** generates DICOM Part 10 files with:
+   - Unique DICOM UIDs for series and instances
+   - Image Position (Patient) calculated for each slice
+   - Proper DICOM metadata tags for 3D reconstruction
+5. Each slice is written as a separate DICOM file
+6. Files are packaged into a ZIP archive for download
 
 ## Testing with VolView
 
@@ -99,20 +126,14 @@ After generating DICOM files, you can verify proper 3D reconstruction:
 3. Verify the 3D volume matches the original image dimensions
 4. Check that slice spacing and orientation are correct
 
-## Build for Production
+## Dependencies
 
-```bash
-npm run build
-```
-
-The production build will be in the `dist/` directory.
-
-## License
-
-Apache 2.0 (same as ITK-Wasm)
+- **[@itk-wasm/image-io](https://www.npmjs.com/package/@itk-wasm/image-io)** - Reading medical image formats
+- **[@itk-wasm/dicom](https://www.npmjs.com/package/@itk-wasm/dicom)** - Reading DICOM series
+- **[dcmjs](https://www.npmjs.com/package/dcmjs)** - Writing DICOM Part 10 files
+- **[jszip](https://www.npmjs.com/package/jszip)** - Creating ZIP archives
 
 ## References
 
 - [ITK-Wasm Documentation](https://wasm.itk.org/)
-- [DICOM Standard](https://www.dicomstandard.org/)
-- [Kitware Data Repository](https://data.kitware.com/)
+- [dcmjs Documentation](https://github.com/dcmjs-org/dcmjs)

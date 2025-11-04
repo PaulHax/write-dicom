@@ -1,14 +1,28 @@
 // Use GDCM writer for DICOM output
 async function getWriteImage() {
-  const isNode = typeof window === 'undefined'
+  const isNode = typeof window === "undefined";
 
   if (isNode) {
-    const module = await import('@itk-wasm/image-io')
-    return module.gdcmWriteImageNode
+    const module = await import("@itk-wasm/image-io");
+    return module.gdcmWriteImageNode;
   } else {
-    const module = await import('@itk-wasm/image-io')
-    return module.gdcmWriteImage
+    const module = await import("@itk-wasm/image-io");
+    return module.gdcmWriteImage;
   }
+}
+
+// Node.js imports (only loaded when needed)
+let fs = null;
+let os = null;
+let path = null;
+
+async function getNodeModules() {
+  if (fs === null) {
+    fs = (await import("fs")).default;
+    os = (await import("os")).default;
+    path = (await import("path")).default;
+  }
+  return { fs, os, path };
 }
 
 /**
@@ -16,13 +30,18 @@ async function getWriteImage() {
  */
 function getBytesPerPixel(componentType) {
   const typeMap = {
-    'int8': 1, 'uint8': 1,
-    'int16': 2, 'uint16': 2,
-    'int32': 4, 'uint32': 4,
-    'int64': 8, 'uint64': 8,
-    'float32': 4, 'float64': 8
-  }
-  return typeMap[componentType] || 1
+    int8: 1,
+    uint8: 1,
+    int16: 2,
+    uint16: 2,
+    int32: 4,
+    uint32: 4,
+    int64: 8,
+    uint64: 8,
+    float32: 4,
+    float64: 8,
+  };
+  return typeMap[componentType] || 1;
 }
 
 /**
@@ -32,28 +51,30 @@ function getBytesPerPixel(componentType) {
  * @returns {Image} The extracted 2D slice
  */
 export function extractSlice(image3D, sliceIndex) {
-  const { size, spacing, origin, direction, imageType, data } = image3D
+  const { size, spacing, origin, direction, imageType, data } = image3D;
 
   // Calculate slice offset
-  const sliceSize = size[0] * size[1]
-  const componentsPerPixel = imageType.components
-  const sliceOffset = sliceIndex * sliceSize * componentsPerPixel
-  const sliceLength = sliceSize * componentsPerPixel
+  const sliceSize = size[0] * size[1];
+  const componentsPerPixel = imageType.components;
+  const sliceOffset = sliceIndex * sliceSize * componentsPerPixel;
+  const sliceLength = sliceSize * componentsPerPixel;
 
   // Extract slice data - create new typed array of same type
-  let sliceData
-  if (data && typeof data.slice === 'function') {
-    sliceData = data.slice(sliceOffset, sliceOffset + sliceLength)
+  let sliceData;
+  if (data && typeof data.slice === "function") {
+    sliceData = data.slice(sliceOffset, sliceOffset + sliceLength);
   } else if (data && data.buffer) {
     // Handle SharedArrayBuffer or other array buffer types
-    const TypedArrayConstructor = data.constructor
-    sliceData = new TypedArrayConstructor(data.buffer,
+    const TypedArrayConstructor = data.constructor;
+    sliceData = new TypedArrayConstructor(
+      data.buffer,
       data.byteOffset + sliceOffset * data.BYTES_PER_ELEMENT,
-      sliceLength)
+      sliceLength,
+    );
     // Make a copy to avoid SharedArrayBuffer issues
-    sliceData = new TypedArrayConstructor(sliceData)
+    sliceData = new TypedArrayConstructor(sliceData);
   } else {
-    throw new Error('Invalid image data format')
+    throw new Error("Invalid image data format");
   }
 
   // Create 2D image metadata
@@ -62,47 +83,49 @@ export function extractSlice(image3D, sliceIndex) {
       dimension: 2,
       componentType: imageType.componentType,
       pixelType: imageType.pixelType,
-      components: imageType.components
+      components: imageType.components,
     },
     name: `slice_${sliceIndex}`,
     origin: new Float64Array([origin[0], origin[1]]),
     spacing: new Float64Array([spacing[0], spacing[1]]),
     direction: new Float64Array([
-      direction[0], direction[1],
-      direction[3], direction[4]
+      direction[0],
+      direction[1],
+      direction[3],
+      direction[4],
     ]),
     size: new Uint32Array([size[0], size[1]]),
     metadata: new Map(),
-    data: sliceData
-  }
+    data: sliceData,
+  };
 
   // Copy metadata if present
   if (image3D.metadata && image3D.metadata instanceof Map) {
     image3D.metadata.forEach((value, key) => {
-      slice2D.metadata.set(key, value)
-    })
+      slice2D.metadata.set(key, value);
+    });
   }
 
   // Update slice position in world coordinates
   // New origin = original origin + sliceIndex * spacing[2] * direction_column_2
-  const originX = origin[0] + sliceIndex * spacing[2] * direction[6]
-  const originY = origin[1] + sliceIndex * spacing[2] * direction[7]
-  slice2D.origin = new Float64Array([originX, originY])
+  const originX = origin[0] + sliceIndex * spacing[2] * direction[6];
+  const originY = origin[1] + sliceIndex * spacing[2] * direction[7];
+  slice2D.origin = new Float64Array([originX, originY]);
 
   // Store the Z position for metadata
-  const zPosition = origin[2] + sliceIndex * spacing[2] * direction[8]
-  slice2D.zPosition = zPosition
+  const zPosition = origin[2] + sliceIndex * spacing[2] * direction[8];
+  slice2D.zPosition = zPosition;
 
-  return slice2D
+  return slice2D;
 }
 
 /**
  * Generates a unique identifier
  */
 function generateUID() {
-  const timestamp = Date.now()
-  const random = Math.floor(Math.random() * 1000000)
-  return `1.2.826.0.1.3680043.8.498.${timestamp}.${random}`
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 1000000);
+  return `1.2.826.0.1.3680043.8.498.${timestamp}.${random}`;
 }
 
 /**
@@ -113,52 +136,52 @@ function createDicomMetadataForSlice(
   sliceIndex,
   totalSlices,
   slice2D,
-  options
+  options,
 ) {
-  const metadata = new Map(originalMetadata || new Map())
+  const metadata = new Map(originalMetadata || new Map());
 
   // Generate Series Instance UID if not present
-  if (!metadata.has('0020|000e')) {
-    metadata.set('0020|000e', options.seriesInstanceUID || generateUID())
+  if (!metadata.has("0020|000e")) {
+    metadata.set("0020|000e", options.seriesInstanceUID || generateUID());
   }
 
   // Generate unique SOP Instance UID for each slice
-  metadata.set('0008|0018', generateUID())
+  metadata.set("0008|0018", generateUID());
 
   // Instance Number - unique for each slice (starts at 1)
-  const instanceNumber = sliceIndex + (options.instanceNumberStart || 1)
-  metadata.set('0020|0013', String(instanceNumber))
+  const instanceNumber = sliceIndex + (options.instanceNumberStart || 1);
+  metadata.set("0020|0013", String(instanceNumber));
 
   // Image Position (Patient) - physical location of slice in mm
   const imagePosition = [
     slice2D.origin[0].toFixed(6),
     slice2D.origin[1].toFixed(6),
-    slice2D.zPosition.toFixed(6)
-  ].join('\\')
-  metadata.set('0020|0032', imagePosition)
+    slice2D.zPosition.toFixed(6),
+  ].join("\\");
+  metadata.set("0020|0032", imagePosition);
 
   // Slice Location - Z position
-  metadata.set('0020|1041', String(slice2D.zPosition.toFixed(6)))
+  metadata.set("0020|1041", String(slice2D.zPosition.toFixed(6)));
 
   // Series Description
   if (options.seriesDescription) {
-    metadata.set('0008|103e', options.seriesDescription)
+    metadata.set("0008|103e", options.seriesDescription);
   }
 
   // Series Number
   if (options.seriesNumber !== undefined) {
-    metadata.set('0020|0011', String(options.seriesNumber))
+    metadata.set("0020|0011", String(options.seriesNumber));
   }
 
   // Number of Images in Acquisition
-  metadata.set('0020|1002', String(totalSlices))
+  metadata.set("0020|1002", String(totalSlices));
 
   // Modality (if not present, default to MR for MRI, CT for CT, etc.)
-  if (!metadata.has('0008|0060') && options.modality) {
-    metadata.set('0008|0060', options.modality)
+  if (!metadata.has("0008|0060") && options.modality) {
+    metadata.set("0008|0060", options.modality);
   }
 
-  return metadata
+  return metadata;
 }
 
 /**
@@ -176,27 +199,39 @@ function createDicomMetadataForSlice(
  */
 export async function writeImageAsDicomSeries(image3D, options = {}) {
   if (image3D.imageType.dimension !== 3) {
-    throw new Error('Input image must be 3D')
+    throw new Error("Input image must be 3D");
   }
 
   const {
-    fileNamePattern = 'slice_%04d.dcm',
-    seriesDescription = 'Medical Image Series',
+    fileNamePattern = "slice_%04d.dcm",
+    seriesDescription = "Medical Image Series",
     seriesNumber = 1,
     instanceNumberStart = 1,
-    modality = 'OT',
+    modality = "OT",
     seriesInstanceUID = generateUID(),
-    useCompression = false
-  } = options
+    useCompression = false,
+  } = options;
 
-  const numSlices = image3D.size[2]
-  const writtenFiles = []
+  const numSlices = image3D.size[2];
+  const writtenFiles = [];
 
-  console.log(`Writing ${numSlices} slices...`)
+  const isNode = typeof window === "undefined";
+  let tempDir = null;
+  let nodeModules = null;
+
+  // In Node.js, we need to write to actual files in a temp directory
+  if (isNode) {
+    nodeModules = await getNodeModules();
+    const { fs, os, path } = nodeModules;
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dicom-write-"));
+    console.log(`Using temp directory: ${tempDir}`);
+  }
+
+  console.log(`Writing ${numSlices} slices...`);
 
   for (let sliceIdx = 0; sliceIdx < numSlices; sliceIdx++) {
     // Extract 2D slice
-    const slice2D = extractSlice(image3D, sliceIdx)
+    const slice2D = extractSlice(image3D, sliceIdx);
 
     // Create DICOM metadata
     slice2D.metadata = createDicomMetadataForSlice(
@@ -209,48 +244,58 @@ export async function writeImageAsDicomSeries(image3D, options = {}) {
         seriesNumber,
         instanceNumberStart,
         modality,
-        seriesInstanceUID
-      }
-    )
+        seriesInstanceUID,
+      },
+    );
 
     // Generate filename with zero-padded index
-    const filename = fileNamePattern.replace('%04d', String(sliceIdx).padStart(4, '0'))
+    const filename = fileNamePattern.replace(
+      "%04d",
+      String(sliceIdx).padStart(4, "0"),
+    );
 
     try {
-      // Debug: log slice info
-      console.log(`Processing slice ${sliceIdx}:`, {
-        size: slice2D.size,
-        dataType: slice2D.data?.constructor?.name,
-        dataLength: slice2D.data?.length,
-        hasMetadata: slice2D.metadata instanceof Map,
-        metadataSize: slice2D.metadata?.size
-      })
+      // Write slice as DICOM
+      const writeImage = await getWriteImage();
 
-      // Write slice as DICOM in memory
-      const writeImage = await getWriteImage()
-      const result = await writeImage(slice2D, filename, {
-        useCompression
-      })
+      let imageData;
 
-      // Get the serialized DICOM data
-      const imageData = result.serializedImage.data
+      if (isNode) {
+        // Node.js: write to temp file, then read back into memory
+        const { fs, path } = nodeModules;
+        const fullPath = path.join(tempDir, filename);
+
+        const { couldWrite } = await writeImage(slice2D, fullPath, {
+          useCompression,
+        });
+        if (!couldWrite) {
+          throw new Error(`Failed to write slice ${sliceIdx}`);
+        }
+
+        // Read the file back into memory
+        imageData = fs.readFileSync(fullPath);
+      } else {
+        // Browser: write directly to memory
+        const result = await writeImage(slice2D, filename, { useCompression });
+        imageData = result.serializedImage.data;
+      }
 
       // Convert to Blob
-      const blob = new Blob([imageData], { type: 'application/dicom' })
+      const blob = new Blob([imageData], { type: "application/dicom" });
 
       writtenFiles.push({
         filename,
         blob,
         sliceIndex: sliceIdx,
-        data: imageData
-      })
+        data: imageData,
+      });
 
       if ((sliceIdx + 1) % 10 === 0 || sliceIdx === numSlices - 1) {
-        console.log(`Wrote ${sliceIdx + 1}/${numSlices} slices`)
+        console.log(`Wrote ${sliceIdx + 1}/${numSlices} slices`);
       }
     } catch (error) {
-      console.error(`Error writing slice ${sliceIdx}:`, error)
-      console.error('Slice2D details:', {
+      console.error(`Error writing slice ${sliceIdx}:`, error);
+      console.error("Slice2D details:", {
         imageType: slice2D.imageType,
         size: slice2D.size,
         origin: slice2D.origin,
@@ -258,13 +303,28 @@ export async function writeImageAsDicomSeries(image3D, options = {}) {
         direction: slice2D.direction,
         dataType: slice2D.data?.constructor?.name,
         dataLength: slice2D.data?.length,
-        dataSample: slice2D.data ? Array.from(slice2D.data.slice(0, 10)) : null
-      })
-      throw error
+        dataSample: slice2D.data ? Array.from(slice2D.data.slice(0, 10)) : null,
+      });
+      throw error;
     }
   }
 
-  return writtenFiles
+  // Clean up temp directory if in Node.js
+  if (isNode && tempDir) {
+    const { fs, path } = nodeModules;
+    try {
+      const files = fs.readdirSync(tempDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(tempDir, file));
+      }
+      fs.rmdirSync(tempDir);
+      console.log(`Cleaned up temp directory: ${tempDir}`);
+    } catch (cleanupError) {
+      console.warn(`Failed to cleanup temp directory: ${cleanupError.message}`);
+    }
+  }
+
+  return writtenFiles;
 }
 
 /**
@@ -272,27 +332,30 @@ export async function writeImageAsDicomSeries(image3D, options = {}) {
  * @param {Array<{filename: string, blob: Blob}>} files - Files to download
  * @param {string} zipFilename - Name of the ZIP file
  */
-export async function downloadFilesAsZip(files, zipFilename = 'dicom-series.zip') {
+export async function downloadFilesAsZip(
+  files,
+  zipFilename = "dicom-series.zip",
+) {
   // Dynamically import JSZip
-  const JSZip = (await import('jszip')).default
+  const JSZip = (await import("jszip")).default;
 
-  const zip = new JSZip()
+  const zip = new JSZip();
 
   for (const file of files) {
-    zip.file(file.filename, file.blob)
+    zip.file(file.filename, file.blob);
   }
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const zipBlob = await zip.generateAsync({ type: "blob" });
 
   // Trigger download
-  const url = URL.createObjectURL(zipBlob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = zipFilename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = zipFilename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 
-  console.log(`Downloaded ${files.length} files as ${zipFilename}`)
+  console.log(`Downloaded ${files.length} files as ${zipFilename}`);
 }
